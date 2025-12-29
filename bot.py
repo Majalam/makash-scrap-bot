@@ -53,8 +53,8 @@ SIMULATED_SUPPLIERS = [
         'approval_date': None
     },
     {
-        'phone': '08012345678',
-        'name': 'Test Customer',
+        'phone': '08144630629',
+        'name': 'Abi',
         'tier': 'Bronze',
         'telegram_id': None,
         'status': 'Active',
