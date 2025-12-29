@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -54,7 +55,7 @@ SIMULATED_SUPPLIERS = [
     },
     {
         'phone': '08144630629',
-        'name': 'Abi',
+        'name': 'abi cus',
         'tier': 'Bronze',
         'telegram_id': None,
         'status': 'Active',
@@ -154,6 +155,122 @@ def send_admin_notification(bot, message):
     except Exception as e:
         print(f"Failed to send admin notification: {e}")
         return False
+
+# ==================== APPROVAL SYSTEM ====================
+async def handle_approval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /approve_<user_id> command."""
+    telegram_id = update.effective_user.id
+    
+    # Check if admin
+    if telegram_id != ADMIN_USER_ID:
+        await update.message.reply_text("❌ Admin only command.")
+        return
+    
+    command_text = update.message.text
+    # Extract user_id from command like /approve_123456789
+    try:
+        target_user_id = int(command_text.split('_')[1])
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Invalid command. Use: /approve_<user_id>")
+        return
+    
+    # Check if user is in pending registrations
+    if target_user_id not in PENDING_REGISTRATIONS:
+        await update.message.reply_text(f"❌ User {target_user_id} not found in pending registrations.")
+        return
+    
+    # Get pending registration data
+    pending_data = PENDING_REGISTRATIONS[target_user_id]
+    customer = pending_data['customer']
+    user_info = pending_data['user']
+    
+    # Update customer status
+    customer['status'] = 'Registered'
+    customer['approved_by'] = telegram_id
+    customer['approval_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Remove from pending
+    del PENDING_REGISTRATIONS[target_user_id]
+    
+    # Notify user
+    try:
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"✅ REGISTRATION APPROVED!\n\n"
+                 f"Hello {user_info['first_name']}!\n\n"
+                 f"Your registration has been approved by Makash.\n"
+                 f"Account Details:\n"
+                 f"• Name: {customer['name']}\n"
+                 f"• Tier: {customer['tier']}\n\n"
+                 f"You can now use the bot with your tier prices.\n"
+                 f"Send /start to begin."
+        )
+    except Exception as e:
+        print(f"Could not notify user {target_user_id}: {e}")
+    
+    # Confirm to admin
+    await update.message.reply_text(
+        f"✅ Approved registration for:\n"
+        f"Name: {customer['name']}\n"
+        f"Phone: {customer['phone']}\n"
+        f"Tier: {customer['tier']}\n"
+        f"User ID: {target_user_id}"
+    )
+
+async def handle_rejection_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /reject_<user_id> command."""
+    telegram_id = update.effective_user.id
+    
+    # Check if admin
+    if telegram_id != ADMIN_USER_ID:
+        await update.message.reply_text("❌ Admin only command.")
+        return
+    
+    command_text = update.message.text
+    # Extract user_id from command like /reject_123456789
+    try:
+        target_user_id = int(command_text.split('_')[1])
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Invalid command. Use: /reject_<user_id>")
+        return
+    
+    # Check if user is in pending registrations
+    if target_user_id not in PENDING_REGISTRATIONS:
+        await update.message.reply_text(f"❌ User {target_user_id} not found in pending registrations.")
+        return
+    
+    # Get pending registration data
+    pending_data = PENDING_REGISTRATIONS[target_user_id]
+    customer = pending_data['customer']
+    user_info = pending_data['user']
+    
+    # Update customer status
+    customer['status'] = 'Rejected'
+    customer['approved_by'] = telegram_id
+    customer['approval_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Remove from pending
+    del PENDING_REGISTRATIONS[target_user_id]
+    
+    # Notify user
+    try:
+        await context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"❌ REGISTRATION REJECTED\n\n"
+                 f"Hello {user_info['first_name']},\n\n"
+                 f"Your registration has been rejected.\n\n"
+                 f"Please contact Makash for more information."
+        )
+    except Exception as e:
+        print(f"Could not notify user {target_user_id}: {e}")
+    
+    # Confirm to admin
+    await update.message.reply_text(
+        f"❌ Rejected registration for:\n"
+        f"Name: {customer['name']}\n"
+        f"Phone: {customer['phone']}\n"
+        f"User ID: {target_user_id}"
+    )
 
 # ==================== COMMAND HANDLERS ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -278,22 +395,24 @@ async def handle_phone_registration(update: Update, context: ContextTypes.DEFAUL
     
     # Send notification to admin (you)
     admin_message = (
-        "🆕 NEW REGISTRATION REQUEST\n\n"
+        f"🆕 NEW REGISTRATION REQUEST\n\n"
         f"Name: {customer['name']}\n"
         f"Phone: {customer['phone']}\n"
         f"Tier: {customer['tier']}\n"
         f"Telegram: @{user.username or 'N/A'} ({user.first_name})\n"
         f"User ID: {telegram_id}\n\n"
-        "To approve: /approve_{telegram_id}\n"
-        "To reject: /reject_{telegram_id}"
+        f"To approve: /approve_{telegram_id}\n"
+        f"To reject: /reject_{telegram_id}"
     )
     
-    # In real implementation, we'll use context.bot
-    # For now, just log it
-    print("\n" + "="*50)
-    print("ADMIN NOTIFICATION:")
-    print(admin_message)
-    print("="*50 + "\n")
+    # Send to admin
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=admin_message
+        )
+    except Exception as e:
+        print(f"Could not send admin notification: {e}")
 
 async def check_item_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Check price for an item based on user's tier."""
@@ -462,23 +581,27 @@ async def admin_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, (user_id, data) in enumerate(PENDING_REGISTRATIONS.items(), 1):
         customer = data['customer']
         user = data['user']
+        timestamp = data['timestamp'].strftime("%Y-%m-%d %H:%M") if hasattr(data['timestamp'], 'strftime') else str(data['timestamp'])
+        
         message += (
             f"{idx}. {customer['name']}\n"
             f"   Phone: {customer['phone']}\n"
             f"   Tier: {customer['tier']}\n"
             f"   Telegram: @{user['username'] or 'N/A'} ({user['first_name']})\n"
             f"   User ID: {user_id}\n"
-            f"   Time: {data['timestamp']}\n\n"
+            f"   Time: {timestamp}\n\n"
         )
     
-    message += "Use /approve_<user_id> to approve\n"
-    message += "Use /reject_<user_id> to reject"
+    message += "────────────────────\n"
+    message += "To approve: /approve_<user_id>\n"
+    message += "To reject: /reject_<user_id>\n"
+    message += "Example: /approve_123456789"
     
     await update.message.reply_text(message)
 
 # ==================== MAIN BOT SETUP ====================
 def main():
-    print("🚀 Starting Makash Bot with Registration System...")
+    print("🚀 Starting Makash Bot with Registration & Approval System...")
     
     # Create application
     application = Application.builder().token(TOKEN).build()
@@ -488,6 +611,17 @@ def main():
     application.add_handler(CommandHandler("prices", view_prices))
     application.add_handler(CommandHandler("myinfo", my_info))
     application.add_handler(CommandHandler("admin_pending", admin_pending))
+    
+    # Handle dynamic approval/rejection commands
+    # These are like /approve_123456789 or /reject_123456789
+    application.add_handler(MessageHandler(
+        filters.Regex(r'^/approve_\d+$'),
+        handle_approval_command
+    ))
+    application.add_handler(MessageHandler(
+        filters.Regex(r'^/reject_\d+$'),
+        handle_rejection_command
+    ))
     
     # Handle item codes
     application.add_handler(MessageHandler(
@@ -521,7 +655,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown))
     
     # Start polling
-    print("✅ Bot is running with registration system!")
+    print("✅ Bot is running with registration and approval system!")
     application.run_polling()
 
 if __name__ == '__main__':
