@@ -29,7 +29,7 @@ def is_user_authorized(telegram_id):
     authorized_users = {
         # Format: Telegram ID: {"name": "Customer Name", "tier": "Gold"}
         123456789: {"name": "Test Customer", "tier": "Gold"},
-        1271245454: {"name": "Musty", "tier": "Silver"},
+        1271245453: {"name": "Musty", "tier": "Silver"},
         # Add more users here for testing
     }
     
